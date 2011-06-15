@@ -19,8 +19,9 @@ install the project:
 2. Check out the Twissandra source code
 3. Install and configure Cassandra
 4. Install Thrift
-5. Create a virtual Python environment with Twissandra's dependencies
-6. Start up the webserver
+5. Install the Python CQL driver
+6. Create a virtual Python environment with Twissandra's dependencies
+7. Start up the webserver
 
 ### Check out the latest Cassandra source code
 
@@ -51,6 +52,12 @@ Finally we can start Cassandra:
 ### Install Thrift
 
 Follow the instructions [provided on the Thrift website itself](http://wiki.apache.org/thrift/ThriftInstallation)
+
+### Install the Python CQL driver
+
+The CQL driver will be added to the Python Package Index soon.  Until then,
+follow the instructions at http://www.datastax.com/docs/0.8/api/using_cql
+to install it manually.
 
 ### Create a virtual Python environment with Twissandra's dependencies
 

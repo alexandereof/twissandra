@@ -1,4 +1,3 @@
 Django
 simplejson
 thrift05
-pycassa

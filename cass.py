@@ -2,20 +2,14 @@ import uuid
 import time
 import threading
 
-import pycassa
-from pycassa.cassandra.ttypes import NotFoundException
+import cql
 
-from cql import Connection
 _local = threading.local()
 try:
     conn = _local.conn
 except AttributeError:
-    conn = _local.conn = Connection('localhost')
-    conn.execute("USE twissandra")
+    conn = _local.conn = cql.connect('localhost', 9160, 'twissandra')
     
-def _dictify_one_row(rows):
-    assert len(rows) == 1, rows
-    return dict((c.name, c.value) for c in rows[0].columns)
 
 # TODO use uuid bytes in row key rather than string
 
@@ -64,20 +58,26 @@ def _get_line(cf, username, start, limit):
     # We get one more tweet than asked for, and if we exceed the limit by doing
     # so, that tweet's key (timestamp) is returned as the 'next' key for
     # pagination.
-    next = None
-    rows = conn.execute("SELECT FIRST %s REVERSED ?..'' FROM %s WHERE key = ?" % (limit + 1, cf), start or '', username) #V1 "or ''" will be automatic
-    if not rows:
-        return [], next
-    columns = rows[0].columns
-    if len(columns) > limit:
-        next = columns.pop().name
+    cursor = conn.cursor()
+    cursor.execute("SELECT FIRST %s REVERSED :start..'' FROM %s WHERE key = :uname" % (limit + 1, cf), 
+                   {'start': start or '', 'uname': username}) # TODO do we need "or ''" still?
+    row = cursor.fetchone()
+    if row is None:
+        return [], None
+
+    if len(row) > limit:
+        next = cursor.description[-1][0]
+    else:
+        next = None
 
     tweets = []
     # Now we do a manual join to get the tweets themselves
-    for tweet_id in (c.name for c in columns):
-        rows = conn.execute("SELECT username, body FROM tweets WHERE key = ?", tweet_id)
-        d = _dictify_one_row(rows)
-        tweets.append({'id': tweet_id, 'body': d['body'].decode('utf-8'), 'username': d['username']})
+    for tweet_id in (d[0] for d in cursor.description):
+        tweet_cursor = conn.cursor()
+        rows = tweet_cursor.execute("SELECT username, body FROM tweets WHERE key = :id", 
+                                    {'id': tweet_id})
+        tweet_row = tweet_cursor.fetchone()
+        tweets.append({'id': tweet_id, 'body': tweet_row[1], 'username': tweet_row[0]})
 
     return (tweets, next)
 
@@ -88,25 +88,32 @@ def get_user_by_username(username):
     """
     Given a username, this gets the user record.
     """
-    rows = conn.execute("SELECT password FROM users WHERE key = ?", username)
-    if not rows:
+    cursor = conn.cursor()
+    cursor.execute("SELECT password FROM users WHERE key = :uname", 
+                   {'uname': username})
+    row = cursor.fetchone()
+    if row is None:
         raise NotFound('User %s not found' % (username,))
-    return _dictify_one_row(rows)
+    return {'password': row[0]}
 
 def get_friend_usernames(username, count=5000):
     """
     Given a username, gets the usernames of the people that the user is
     following.
     """
-    rows = conn.execute("SELECT followed FROM following WHERE followed_by = ?", username)
-    return [row.columns[0].value for row in rows]
+    cursor = conn.cursor()
+    cursor.execute("SELECT followed FROM following WHERE followed_by = :uname", 
+                   {'uname': username})
+    return [row[0] for row in cursor]
 
 def get_follower_usernames(username, count=5000):
     """
     Given a username, gets the usernames of the people following that user.
     """
-    rows = conn.execute("SELECT followed_by FROM following WHERE followed = ?", username)
-    return [row.columns[0].value for row in rows]
+    cursor = conn.cursor()
+    cursor.execute("SELECT followed_by FROM following WHERE followed = :uname", 
+                   {'uname': username})
+    return [row[0] for row in cursor]
 
 def get_timeline(username, start=None, limit=40):
     """
@@ -124,11 +131,13 @@ def get_tweet(tweet_id):
     """
     Given a tweet id, this gets the entire tweet record.
     """
-    rows = conn.execute("SELECT username, body FROM tweets WHERE key = ?", tweet_id)
-    if not rows:
+    cursor = conn.cursor()
+    cursor.execute("SELECT username, body FROM tweets WHERE key = :id", 
+                   {'id': tweet_id})
+    row = cursor.fetchone()
+    if row is None:
         raise NotFound('Tweet %s not found' % (tweet_id,))
-    d = _dictify_one_row(rows)
-    return {'username': d['username'], 'body': d['body'].decode('utf-8')}
+    return {'username': row[0], 'body': row[1]}
 
 
 # INSERTING APIs
@@ -137,38 +146,47 @@ def save_user(username, password):
     """
     Saves the user record.
     """
-    conn.execute("UPDATE users SET password = ? WHERE key = ?", password, username)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO users (key, password) VALUES (:uname, :pw)",
+                   {'pw': password, 'uname': username})
 
 def save_tweet(username, body):
     """
     Saves the tweet record.
     """
-    tweet_id = str(uuid.uuid1())
-
-    # Make sure the tweet body is utf-8 encoded
-    body = body.encode('utf-8')
-
+    cursor = conn.cursor()
+    tweet_id = uuid.uuid1()
     # Insert the tweet, then into the user's timeline, then into the public one
-    conn.execute("UPDATE tweets SET username = ?, body = ? WHERE key = ?", username, body, tweet_id)
-    conn.execute("UPDATE userline SET ? = '' WHERE key = ?", tweet_id, username)
-    conn.execute("UPDATE userline SET ? = '' WHERE key = ?", tweet_id, PUBLIC_USERLINE_KEY)
+    cursor.execute("INSERT INTO tweets (key, username, body) VALUES (:id, :uname, :body)",
+                   {'id': tweet_id, 'uname': username, 'body': body})
+    cursor.execute("INSERT INTO userline (key, :id) VALUES (:uname, '')",
+                   {'id': tweet_id, 'uname': username})
+    cursor.execute("INSERT INTO userline (key, :id) VALUES (:uname, '')",
+                   {'id': tweet_id, 'uname': PUBLIC_USERLINE_KEY})
     # Get the user's followers, and insert the tweet into all of their streams
     follower_usernames = [username] + get_follower_usernames(username)
     for follower_username in follower_usernames:
-        conn.execute("UPDATE timeline SET ? = '' WHERE key = ?", tweet_id, follower_username)
+        cursor.execute("INSERT INTO timeline (key, :id) VALUES (:uname, '')",
+                       {'id': tweet_id, 'uname': follower_username})
 
 def add_friends(from_username, to_usernames):
     """
     Adds a friendship relationship from one user to some others.
     """
+    cursor = conn.cursor()
     for to_username in to_usernames:
-        row_id = str(uuid.uuid1())
-        conn.execute("UPDATE following SET followed = ?, followed_by = ? WHERE key = ?", to_username, from_username, row_id)
+        row_id = uuid.uuid1()
+        cursor.execute("INSERT INTO following (key, followed, followed_by) VALUES (:id, :to, :from)",
+                       {'id': row_id, 'to': to_username, 'from': from_username})
 
 def remove_friend(from_username, to_username):
     """
     Removes a friendship relationship from one user to some others.
     """
-    rows = conn.execute("SELECT * FROM following WHERE followed = ? AND followed_by = ?", to_username, from_username)
-    assert len(rows) == 1
-    conn.execute("DELETE FROM following WHERE key = ?", rows[0].key)
+    cursor = conn.cursor()
+    cursor.execute("SELECT key FROM following WHERE followed = :to AND followed_by = :from", 
+                   {'to': to_username, 'from': from_username})
+    assert cursor.rowcount == 1
+    row = cursor.fetchone()
+    cursor.execute("DELETE FROM following WHERE key = :id", 
+                   {'id': row[0]})
