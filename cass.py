@@ -56,7 +56,7 @@ def _get_line(cf, username, start, limit):
     # so, that tweet's key (timestamp) is returned as the 'next' key for
     # pagination.
     cursor = conn.cursor()
-    cursor.execute("SELECT FIRST %s REVERSED :start..'' FROM %s WHERE key = :uname" % (limit + 1, cf), 
+    cursor.execute("SELECT FIRST %s REVERSED :start..'' FROM %s WHERE uname = :uname" % (limit + 1, cf), 
                    {'start': start or '', 'uname': username}) # TODO do we need "or ''" still?
     row = cursor.fetchone()
     if row is None:
@@ -71,7 +71,7 @@ def _get_line(cf, username, start, limit):
     # Now we do a manual join to get the tweets themselves
     for tweet_id in (d[0] for d in cursor.description):
         tweet_cursor = conn.cursor()
-        rows = tweet_cursor.execute("SELECT username, body FROM tweets WHERE key = :id", 
+        rows = tweet_cursor.execute("SELECT username, body FROM tweets WHERE id = :id", 
                                     {'id': tweet_id})
         tweet_row = tweet_cursor.fetchone()
         tweets.append({'id': tweet_id, 'body': tweet_row[1], 'username': tweet_row[0]})
@@ -86,7 +86,7 @@ def get_user_by_username(username):
     Given a username, this gets the user record.
     """
     cursor = conn.cursor()
-    cursor.execute("SELECT password FROM users WHERE key = :uname", 
+    cursor.execute("SELECT password FROM users WHERE uname = :uname", 
                    {'uname': username})
     row = cursor.fetchone()
     if row is None:
@@ -129,7 +129,7 @@ def get_tweet(tweet_id):
     Given a tweet id, this gets the entire tweet record.
     """
     cursor = conn.cursor()
-    cursor.execute("SELECT username, body FROM tweets WHERE key = :id", 
+    cursor.execute("SELECT username, body FROM tweets WHERE id = :id", 
                    {'id': tweet_id})
     row = cursor.fetchone()
     if row is None:
@@ -144,7 +144,7 @@ def save_user(username, password):
     Saves the user record.
     """
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO users (key, password) VALUES (:uname, :pw)",
+    cursor.execute("INSERT INTO users (uname, password) VALUES (:uname, :pw)",
                    {'pw': password, 'uname': username})
 
 def save_tweet(username, body):
@@ -154,16 +154,16 @@ def save_tweet(username, body):
     cursor = conn.cursor()
     tweet_id = uuid.uuid1()
     # Insert the tweet, then into the user's timeline, then into the public one
-    cursor.execute("INSERT INTO tweets (key, username, body) VALUES (:id, :uname, :body)",
+    cursor.execute("INSERT INTO tweets (id, username, body) VALUES (:id, :uname, :body)",
                    {'id': tweet_id, 'uname': username, 'body': body})
-    cursor.execute("INSERT INTO userline (key, :id) VALUES (:uname, '')",
+    cursor.execute("INSERT INTO userline (uname, :id) VALUES (:uname, '')",
                    {'id': tweet_id, 'uname': username})
-    cursor.execute("INSERT INTO userline (key, :id) VALUES (:uname, '')",
+    cursor.execute("INSERT INTO userline (uname, :id) VALUES (:uname, '')",
                    {'id': tweet_id, 'uname': PUBLIC_USERLINE_KEY})
     # Get the user's followers, and insert the tweet into all of their streams
     follower_usernames = [username] + get_follower_usernames(username)
     for follower_username in follower_usernames:
-        cursor.execute("INSERT INTO timeline (key, :id) VALUES (:uname, '')",
+        cursor.execute("INSERT INTO timeline (uname, :id) VALUES (:uname, '')",
                        {'id': tweet_id, 'uname': follower_username})
 
 def add_friends(from_username, to_usernames):
@@ -173,7 +173,7 @@ def add_friends(from_username, to_usernames):
     cursor = conn.cursor()
     for to_username in to_usernames:
         row_id = uuid.uuid1()
-        cursor.execute("INSERT INTO following (key, followed, followed_by) VALUES (:id, :to, :from)",
+        cursor.execute("INSERT INTO following (id, followed, followed_by) VALUES (:id, :to, :from)",
                        {'id': row_id, 'to': to_username, 'from': from_username})
 
 def remove_friend(from_username, to_username):
@@ -181,7 +181,7 @@ def remove_friend(from_username, to_username):
     Removes a friendship relationship from one user to some others.
     """
     cursor = conn.cursor()
-    cursor.execute("SELECT key FROM following WHERE followed = :to AND followed_by = :from", 
+    cursor.execute("SELECT id FROM following WHERE followed = :to AND followed_by = :from", 
                    {'to': to_username, 'from': from_username})
     assert cursor.rowcount == 1
     row = cursor.fetchone()

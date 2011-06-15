@@ -19,12 +19,12 @@ class Command(NoArgsCommand):
 
         cursor.execute("CREATE KEYSPACE twissandra WITH strategy_class='SimpleStrategy' and strategy_options:replication_factor=1")
         cursor.execute("USE twissandra")
-        cursor.execute("CREATE COLUMNFAMILY users (key varchar PRIMARY KEY, password varchar)")
-        cursor.execute("CREATE COLUMNFAMILY following (key uuid PRIMARY KEY, followed varchar, followed_by varchar)")
+        cursor.execute("CREATE COLUMNFAMILY users (uname varchar PRIMARY KEY, password varchar)")
+        cursor.execute("CREATE COLUMNFAMILY following (id uuid PRIMARY KEY, followed varchar, followed_by varchar)")
         cursor.execute("CREATE INDEX following_followed ON following(followed)")
         cursor.execute("CREATE INDEX following_followed_by ON following(followed_by)")
-        cursor.execute("CREATE COLUMNFAMILY tweets (key uuid PRIMARY KEY, user_id varchar, body varchar)")
-        cursor.execute("CREATE COLUMNFAMILY timeline (key varchar PRIMARY KEY) WITH comparator=uuid")
-        cursor.execute("CREATE COLUMNFAMILY userline (key varchar PRIMARY KEY) WITH comparator=uuid")
+        cursor.execute("CREATE COLUMNFAMILY tweets (id uuid PRIMARY KEY, user_id varchar, body varchar)")
+        cursor.execute("CREATE COLUMNFAMILY timeline (uname varchar PRIMARY KEY) WITH comparator=uuid")
+        cursor.execute("CREATE COLUMNFAMILY userline (uname varchar PRIMARY KEY) WITH comparator=uuid")
 
         print 'All done!'
