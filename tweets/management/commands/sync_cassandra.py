@@ -23,8 +23,7 @@ class Command(NoArgsCommand):
         cursor.execute("CREATE COLUMNFAMILY following (key uuid PRIMARY KEY, followed varchar, followed_by varchar)")
         cursor.execute("CREATE INDEX following_followed ON following(followed)")
         cursor.execute("CREATE INDEX following_followed_by ON following(followed_by)")
-        # TODO make tweet key uuid
-        cursor.execute("CREATE COLUMNFAMILY tweets (key varchar PRIMARY KEY, user_id varchar, body varchar)")
+        cursor.execute("CREATE COLUMNFAMILY tweets (key uuid PRIMARY KEY, user_id varchar, body varchar)")
         cursor.execute("CREATE COLUMNFAMILY timeline (key varchar PRIMARY KEY) WITH comparator=uuid")
         cursor.execute("CREATE COLUMNFAMILY userline (key varchar PRIMARY KEY) WITH comparator=uuid")
 

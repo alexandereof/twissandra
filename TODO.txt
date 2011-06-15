@@ -1,0 +1,2 @@
+Feature wish list:
+ - Add Friends show most recent signups

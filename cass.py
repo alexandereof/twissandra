@@ -11,9 +11,6 @@ except AttributeError:
     conn = _local.conn = cql.connect('localhost', 9160, 'twissandra')
     
 
-# TODO use uuid bytes in row key rather than string
-
-
 __all__ = ['get_user_by_username', 'get_friend_usernames',
     'get_follower_usernames',
     'get_timeline', 'get_userline', 'get_tweet', 'save_user',
